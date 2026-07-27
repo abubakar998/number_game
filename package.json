@@ -1,0 +1,15 @@
+{
+  "name": "adding-number-game",
+  "version": "1.0.0",
+  "description": "Two-player adding number game with hotseat, vs-computer, and online cross-PC modes.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,11 @@
+# Render Blueprint — provisions the game as a free web service.
+# Deploy: push this repo to GitHub/GitLab, then on Render choose New > Blueprint.
+services:
+  - type: web
+    name: adding-number-game
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    # Render assigns PORT automatically; server.js reads process.env.PORT.
+    # WebSocket is served on the same port and upgraded to wss:// behind Render's HTTPS.

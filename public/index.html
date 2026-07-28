@@ -163,16 +163,15 @@
         <div id="setterHint" class="hint">The other side then chooses to move first or second, so the numbers can't be rigged.</div>
       </div>
 
-      <!-- online: create or join -->
+      <!-- online: create a new room, or join one with a code -->
       <div id="onlineOptions" class="hidden">
-        <div class="mode-tabs" id="onlineTabs">
-          <button data-online="create" class="active">Create room</button>
-          <button data-online="join">Join room</button>
-        </div>
-        <div id="joinFields" class="hidden">
+        <button id="createRoomBtn" class="block">Create room</button>
+        <div class="hint" style="text-align:center">or join a friend's room</div>
+        <div id="joinFields">
           <label for="roomCode">Room code</label>
           <input type="text" id="roomCode" placeholder="e.g. ABC123" maxlength="6" style="text-transform:uppercase" />
         </div>
+        <button id="joinRoomBtn" class="block secondary">Join room</button>
       </div>
 
       <button id="startBtn" class="block">Start game</button>
@@ -183,6 +182,7 @@
       <div id="roomInfo" class="hidden">
         <label style="text-align:center">Share this room code</label>
         <div id="codeBox" class="code-box"></div>
+        <button id="copyCodeBtn" class="block secondary">Copy code</button>
       </div>
       <div id="status" class="status"></div>
 
@@ -239,7 +239,6 @@
     const setupEl = $('setup');
     const gameEl = $('game');
     const modeTabs = document.querySelectorAll('.mode-tabs [data-mode]');
-    const onlineTabs = document.querySelectorAll('#onlineTabs [data-online]');
 
     let mode = 'hotseat';        // 'hotseat' | 'cpu' | 'online'
     let onlineAction = 'create'; // 'create' | 'join'
@@ -253,15 +252,12 @@
       modeTabs.forEach((b) => b.classList.toggle('active', b === btn));
       $('cpuOptions').classList.toggle('hidden', mode !== 'cpu');
       $('onlineOptions').classList.toggle('hidden', mode !== 'online');
+      $('startBtn').classList.toggle('hidden', mode === 'online');
       updateParamVisibility();
     }));
 
-    onlineTabs.forEach((btn) => btn.addEventListener('click', () => {
-      onlineAction = btn.dataset.online;
-      onlineTabs.forEach((b) => b.classList.toggle('active', b === btn));
-      $('joinFields').classList.toggle('hidden', onlineAction !== 'join');
-      updateParamVisibility();
-    }));
+    $('createRoomBtn').addEventListener('click', () => { onlineAction = 'create'; startOnline(); });
+    $('joinRoomBtn').addEventListener('click', () => { onlineAction = 'join'; startOnline(); });
 
     // The party that SETS the numbers doesn't get to pick their seat, so hide the
     // inputs when the local player isn't the setter: joining an online room, or
@@ -273,9 +269,7 @@
     }
 
     function updateParamVisibility() {
-      const joining = mode === 'online' && onlineAction === 'join';
-      const cpuAuto = cpuSetsNumbers();
-      $('paramFields').classList.toggle('hidden', joining || cpuAuto);
+      $('paramFields').classList.toggle('hidden', cpuSetsNumbers());
     }
 
     // Computer chooses a valid Target and Max add when it sets the parameters:
@@ -345,6 +339,34 @@
         startLocal(params, { vsCpu: true, firstMover: computerChooseSeat(params) });
       }
     });
+
+    $('copyCodeBtn').addEventListener('click', () => {
+      const code = $('codeBox').textContent.trim();
+      if (!code) return;
+      copyText(code).then((ok) => {
+        const btn = $('copyCodeBtn');
+        btn.textContent = ok ? 'Copied!' : 'Press Ctrl+C to copy';
+        setTimeout(() => { btn.textContent = 'Copy code'; }, 1500);
+      });
+    });
+
+    // navigator.clipboard needs a secure context (https/localhost); fall back to a
+    // hidden textarea + execCommand for plain-http LAN play.
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text).then(() => true, () => false);
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return Promise.resolve(ok);
+    }
 
     $('menuBtn').addEventListener('click', backToMenu);
     $('againBtn').addEventListener('click', () => {

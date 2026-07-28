@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Adding Number Game</title>
+  <title>Addition Number Game</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -131,7 +131,7 @@
 </head>
 <body>
   <div class="app">
-    <h1 id="gameTitle">➕ Adding Number Game</h1>
+    <h1 id="gameTitle">➕ Addition Number Game</h1>
     <p class="tagline" id="gameTagline">Add up to <em>Max add</em> each turn. First to reach the <em>Target</em> wins.</p>
 
     <!-- SETUP -->
@@ -294,10 +294,14 @@
     function updateVariantLabels() {
       const v = Game.VARIANTS[variant];
       const L = Game.PARAM_LIMITS;
-      $('gameTitle').textContent = (variant === 'sub' ? '➖ ' : '➕ ') + v.name + ' Number Game';
+      const title = v.name + ' Number Game';
+      $('gameTitle').textContent = (variant === 'sub' ? '➖ ' : '➕ ') + title;
       $('gameTagline').textContent = v.tagline;
       $('maxAddLabel').textContent = `${v.stepLabel} (${L.maxAddMin}–${L.maxAddMax})`;
+      document.title = title;
     }
+
+    updateVariantLabels(); // single source of truth: overwrite the markup's placeholders
 
     modeTabs.forEach((btn) => btn.addEventListener('click', () => {
       mode = btn.dataset.mode;

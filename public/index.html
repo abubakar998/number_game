@@ -304,7 +304,7 @@
         <div class="log" id="log"></div>
       </div>
 
-      <div class="row">
+      <div class="row" id="actionRow">
         <div><button id="againBtn" class="secondary block hidden">Play again</button></div>
         <div><button id="resignBtn" class="secondary block hidden">Surrender</button></div>
         <div><button id="menuBtn" class="secondary block">Menu</button></div>
@@ -590,11 +590,15 @@
       $('chooseFirstBtn').onclick = () => { hideChoosePanel(); onFirst(); };
       $('chooseSecondBtn').onclick = () => { hideChoosePanel(); onSecond(); };
       $('boardArea').classList.add('hidden');
+      // The action row sits outside #boardArea, so it needs hiding separately — otherwise
+      // its Surrender button competes with the one in this panel.
+      $('actionRow').classList.add('hidden');
       $('choosePanel').classList.remove('hidden');
     }
     function hideChoosePanel() {
       $('choosePanel').classList.add('hidden');
       $('boardArea').classList.remove('hidden');
+      $('actionRow').classList.remove('hidden');
     }
 
     // ===== Local modes (hotseat + vs computer) =====
@@ -622,6 +626,7 @@
 
     function localMove(n, timedOut) {
       if (!Game.isValidMove(ctx.state, n)) return;
+      ctx.lastMoveTimedOut = !!timedOut; // read by trackEnd() to classify the ending
       const player = ctx.state.currentPlayer;
       Game.applyMove(ctx.state, n);
       if (ctx.state.winner !== null) ctx.scores[ctx.state.winner]++;
@@ -738,6 +743,7 @@
           $('roomInfo').classList.add('hidden');
           setStatus('');
           ctx.state = msg.state;
+          ctx.lastMoveTimedOut = !!(msg.move && msg.move.timedOut);
           setVariant(msg.state.variant); // covers a reconnect that skipped choose_seat
           if (msg.scores) ctx.scores = msg.scores;
           if (msg.move && msg.move.resigned) logResign(playerLabel(msg.move.player));
@@ -799,6 +805,11 @@
 
       renderControls(s);
       if (!ctx.online) syncLocalTimer(); // online clocks come from the server
+
+      // Counted here because every mode funnels through render(). Only the opening
+      // position counts as a start, so an online reconnect doesn't inflate the figure.
+      if (s.winner !== null) trackEnd();
+      else if (s.total === (s.variant === 'sub' ? s.target : 0)) trackStart();
     }
 
     // Online uses one shared button row; local modes use a column per player.
@@ -940,6 +951,39 @@
     }
 
     function setStatus(msg) { $('status').textContent = msg; }
+
+    // ===== Usage counters =====
+    // Local modes never touch the server, so a server-only counter would miss two of the
+    // three modes entirely. Anonymous counts only — and wrapped so analytics can never
+    // break the game.
+    function track(event, extra) {
+      try {
+        const body = JSON.stringify(Object.assign({ event }, extra));
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/e', new Blob([body], { type: 'application/json' }));
+        } else {
+          // .catch is required as well as the try/catch: a rejected fetch is asynchronous
+          // and would otherwise surface as an unhandled rejection.
+          fetch('/e', { method: 'POST', body, keepalive: true }).catch(() => {});
+        }
+      } catch (e) { /* never let a counter break play */ }
+    }
+
+    function trackStart() {
+      if (!ctx || ctx.trackedStart) return;
+      ctx.trackedStart = true;
+      track('game_start', { mode: trackMode(), variant: ctx.state.variant });
+    }
+
+    function trackEnd() {
+      if (!ctx || ctx.trackedEnd) return;
+      ctx.trackedEnd = true;
+      const s = ctx.state;
+      const ending = s.resignedBy ? 'resign' : (ctx.lastMoveTimedOut ? 'timeout' : 'win');
+      track('game_end', { mode: trackMode(), variant: s.variant, ending });
+    }
+
+    function trackMode() { return ctx.online ? 'online' : (ctx.vsCpu ? 'cpu' : 'hotseat'); }
 
     // ===== Invite links (?room=CODE) =====
     // Landing from a shared link joins the room straight away, so the recipient never

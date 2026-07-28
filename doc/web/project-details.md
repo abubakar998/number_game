@@ -126,10 +126,16 @@ link switches to Online mode and joins automatically, so the recipient never typ
 If the game is already under way (the other player closed the tab and reopened the link),
 the server drops them onto the live board rather than a seat picker.
 
+### Usage counters
+`POST /e` accepts anonymous `game_start` / `game_end` beacons from the client (allowlisted
+values only, 1 KB cap); `GET /stats` returns the totals as JSON. Counted client-side so
+hotseat and vs-Computer games register too — they never otherwise touch the server. No
+cookies or identifiers. See [monetization.md](monetization.md) §2 for what the fields mean.
+
 ### Environment variables
 `PORT` (default 3000). `KEEPALIVE_URL` — optional; when set, the instance pings that URL
 every `KEEPALIVE_MINUTES` (default 10) to keep a sleeping free-tier host awake. Off unless
-set.
+set. `STATS_TOKEN` — optional; when set, `/stats` requires `?token=…`.
 
 The client runs local modes (hotseat, vs Computer) entirely in the browser. Online mode
 talks to the server, which is the **single source of truth**: it validates every move,

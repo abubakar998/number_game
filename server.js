@@ -19,10 +19,76 @@ const MIME = {
   '.svg': 'image/svg+xml',
 };
 
+// ---- Usage counters ----
+// Counts only: no cookies, no identifiers, no IP storage, so no consent banner needed.
+// Kept in memory and echoed to stdout, since the free tier's disk is ephemeral — the log
+// is what survives the restarts that wipe this object.
+const MODES = ['hotseat', 'cpu', 'online'];
+const ENDINGS = ['win', 'resign', 'timeout'];
+
+const stats = {
+  since: new Date().toISOString(),
+  pageLoads: 0, // page loads, NOT unique visitors — there's nothing here to dedupe by
+  started: { hotseat: 0, cpu: 0, online: 0 },
+  finished: { hotseat: 0, cpu: 0, online: 0 },
+  byVariant: { add: 0, sub: 0 },
+  byEnding: { win: 0, resign: 0, timeout: 0 },
+};
+
+// The event sink is public, so it trusts nothing: allowlisted values only.
+function recordEvent(body) {
+  const mode = MODES.indexOf(body.mode) !== -1 ? body.mode : null;
+  if (!mode) return;
+  if (body.event === 'game_start') {
+    stats.started[mode]++;
+    if (Game.variantValid(body.variant)) stats.byVariant[body.variant]++;
+    return;
+  }
+  if (body.event === 'game_end') {
+    stats.finished[mode]++;
+    if (ENDINGS.indexOf(body.ending) !== -1) stats.byEnding[body.ending]++;
+    const s = Object.values(stats.started).reduce((a, b) => a + b, 0);
+    const f = Object.values(stats.finished).reduce((a, b) => a + b, 0);
+    console.log(`[stats] finished ${mode}/${body.variant}/${body.ending} — started=${s} finished=${f}`);
+  }
+}
+
+const MAX_EVENT_BYTES = 1024;
+
+function handleEvent(req, res) {
+  let body = '';
+  let tooBig = false;
+  req.on('data', (chunk) => {
+    if (tooBig) return;
+    body += chunk;
+    if (body.length > MAX_EVENT_BYTES) { tooBig = true; body = ''; } // never buffer unboundedly
+  });
+  req.on('end', () => {
+    if (!tooBig) {
+      try { recordEvent(JSON.parse(body)); } catch (e) { /* malformed: drop silently */ }
+    }
+    res.writeHead(204).end();
+  });
+}
+
 // ---- Static file server ----
 const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0]);
-  if (urlPath === '/') urlPath = '/index.html';
+
+  // Routed before the static lookup below, which would otherwise treat these as filenames.
+  if (urlPath === '/e' && req.method === 'POST') { handleEvent(req, res); return; }
+  if (urlPath === '/stats') {
+    const token = process.env.STATS_TOKEN;
+    if (token && new URL(req.url, 'http://x').searchParams.get('token') !== token) {
+      res.writeHead(401).end('Unauthorized');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(stats, null, 2));
+    return;
+  }
+
+  if (urlPath === '/') { urlPath = '/index.html'; stats.pageLoads++; }
 
   // game.js lives at project root but is shared with the client.
   let filePath;

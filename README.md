@@ -11,7 +11,8 @@ For example, with Max add = 2 the ratio rule puts the target between 24 and 45.
 Three ways to play:
 
 - **Two players** – hotseat on one PC.
-- **vs Computer** – against an optimal AI, using cut-and-choose (below).
+- **vs Computer** – pick a difficulty (**Beginner / Amateur**, **Pro**, **Legendary**),
+  using cut-and-choose (below).
 - **Online** – two humans on **different PCs**, over your network or the internet.
 
 ## Fair setup: cut-and-choose
@@ -23,9 +24,10 @@ picks both numbers could always rig a win. To prevent that, the two roles are sp
 
 Rigging the numbers no longer helps — the chooser simply takes the winning seat.
 - **Online:** the host sets Target & Max add; the joiner picks first/second.
-- **vs Computer:** pick who sets the numbers. If you set them, the computer takes the
-  winning seat (so don't expect to rig it). If the computer sets them, **you** choose the
-  seat — take the winning one and you can beat the optimal AI.
+- **vs Computer:** pick who sets the numbers. If you set them, the computer chooses its
+  seat — at **Legendary** it always takes the winning one (so don't expect to rig it),
+  while easier levels often pick wrong. If the computer sets them, **you** choose the
+  seat — take the winning one and you can beat even Legendary.
 
 ## Requirements
 - [Node.js](https://nodejs.org/) 18 or newer.
@@ -44,8 +46,8 @@ needed. Online mode uses the server.
 1. On the host PC, run `npm start`.
 2. Find the host's local IP (Windows: `ipconfig` → IPv4 Address, e.g. `192.168.1.20`).
 3. The other player opens `http://192.168.1.20:3000` on their PC.
-4. Host: pick **Online → Create room**, set Target & Max add, Start → a **room code**
-   appears. Guest: pick **Online → Join room**, enter the code, Start.
+4. Host: pick **Online**, set Target & Max add, then click **Create room** → a **room
+   code** appears. Guest: pick **Online**, enter the code, then click **Join room**.
 
 > In online games the **host sets Target and Max add**, then the **joining player chooses
 > to move first or second** (cut-and-choose), so the host can't rig the numbers to force
@@ -69,9 +71,19 @@ option is **Render** (a `render.yaml` Blueprint is included); **Fly.io** works t
 [DEPLOY.md](DEPLOY.md) for step-by-step instructions.
 
 ## How the computer plays
-It uses the winning strategy for this subtraction game: it tries to leave you on a
-multiple of `Max add + 1`. If the game starts in a position where that's impossible, the
-computer can be beaten with correct play.
+The winning strategy for this subtraction game is to leave you on a multiple of
+`Max add + 1`. Difficulty controls how reliably the computer finds that move, and how
+often it claims the winning seat in cut-and-choose:
+
+| Level | Finds the best move | Takes the winning seat |
+| --- | --- | --- |
+| Beginner / Amateur | 35% | 25% |
+| Pro | 80% | 85% |
+| Legendary | always | always |
+
+Every level still takes an immediate win when the target is within reach this turn. At
+Legendary the play is perfect, so from a won seat it cannot be beaten — your chance comes
+from the seat choice.
 
 ## Project layout
 ```

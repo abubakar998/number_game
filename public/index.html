@@ -49,7 +49,7 @@
       margin-bottom: 16px;
     }
     input:focus, select:focus { outline: 2px solid var(--accent); border-color: transparent; }
-    .row { display: flex; gap: 14px; }
+    .row { display: flex; gap: 14px; margin-bottom: 14px;}
     .row > div { flex: 1; }
     button {
       cursor: pointer;
@@ -155,6 +155,13 @@
 
       <!-- vs computer: who sets the numbers (the other side then chooses first/second) -->
       <div id="cpuOptions" class="hidden">
+        <label for="difficulty">Difficulty</label>
+        <select id="difficulty">
+          <option value="beginner">Beginner</option>
+          <option value="pro" selected>Professional</option>
+          <option value="legendary">Legendary</option>
+        </select>
+
         <label for="setter">Who sets Target &amp; Max add?</label>
         <select id="setter">
           <option value="you">You</option>
@@ -287,13 +294,7 @@
       return { target, maxAdd };
     }
 
-    // Cut-and-choose: when the computer is the chooser, it takes the winning seat.
-    // The mover-to-play loses iff target is a multiple of (maxAdd + 1); so the first
-    // mover wins otherwise. Returns the player number (1=You, 2=Computer) to move first.
-    function computerChooseSeat(params) {
-      const firstMoverWins = params.target % (params.maxAdd + 1) !== 0;
-      return firstMoverWins ? 2 : 1; // computer takes first if first-mover wins, else lets you go first
-    }
+    function cpuLevel() { return $('difficulty').value; }
 
     function validateParams() {
       const L = Game.PARAM_LIMITS;
@@ -322,6 +323,7 @@
         return startLocal(params, { vsCpu: false, firstMover: 1 });
       }
       // vs Computer, cut-and-choose:
+      const level = cpuLevel();
       if (cpuSetsNumbers()) {
         // Computer sets the numbers; YOU choose to move first or second.
         const params = computerDecideParams();
@@ -329,14 +331,18 @@
         $('roomInfo').classList.add('hidden');
         showChoosePanel(
           `Computer set Target ${params.target} · Max add ${params.maxAdd}. Move first or second?`,
-          () => startLocal(params, { vsCpu: true, firstMover: 1 }), // you first
-          () => startLocal(params, { vsCpu: true, firstMover: 2 })  // computer first
+          () => startLocal(params, { vsCpu: true, firstMover: 1, cpuLevel: level }), // you first
+          () => startLocal(params, { vsCpu: true, firstMover: 2, cpuLevel: level })  // computer first
         );
       } else {
-        // You set the numbers; the computer takes the winning seat.
+        // You set the numbers; the computer picks its seat (well, at higher levels).
         const params = validateParams();
         if (!params) return;
-        startLocal(params, { vsCpu: true, firstMover: computerChooseSeat(params) });
+        startLocal(params, {
+          vsCpu: true,
+          firstMover: Game.chooseSeatFor(params.target, params.maxAdd, level),
+          cpuLevel: level,
+        });
       }
     });
 
@@ -372,7 +378,7 @@
     $('againBtn').addEventListener('click', () => {
       if (!ctx) return;
       if (ctx.online) { ctx.ws.send(JSON.stringify({ type: 'rematch' })); }
-      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores });
+      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores, cpuLevel: ctx.cpuLevel });
     });
 
     function showGame() { setupEl.classList.add('hidden'); gameEl.classList.remove('hidden'); }
@@ -411,6 +417,7 @@
         state: Game.createState(params.target, params.maxAdd, firstMover),
         scores: opts.scores || { 1: 0, 2: 0 },
         cpuPlayer: vsCpu ? 2 : null, // You are player 1, the computer is player 2
+        cpuLevel: opts.cpuLevel || 'legendary',
       };
       $('roomInfo').classList.add('hidden');
       $('log').innerHTML = '';
@@ -435,7 +442,7 @@
       setStatus('Computer is thinking…');
       setTimeout(() => {
         if (!ctx || ctx.state.winner !== null) return;
-        const n = Game.bestMove(ctx.state);
+        const n = Game.cpuMove(ctx.state, ctx.cpuLevel);
         setStatus('');
         localMove(n);
       }, 650);
@@ -597,8 +604,8 @@
       $('addButtons').classList.add('hidden');
       $('twoCol').classList.remove('hidden');
       renderTwoColButtons(s.maxAdd);
-      $('nameP1').textContent = playerLabel(1);
-      $('nameP2').textContent = playerLabel(2);
+      $('nameP1').textContent = playerLabel(1, true);
+      $('nameP2').textContent = playerLabel(2, true);
       [1, 2].forEach((p) => {
         const active = s.winner !== null ? s.winner === p : s.currentPlayer === p;
         $('colP' + p).classList.toggle('active', active);
@@ -671,9 +678,14 @@
       return `Player ${player}'s turn`;
     }
 
-    function playerLabel(player) {
+    // `long` adds the skill level, for roomier spots like the player column header.
+    function playerLabel(player, long) {
       if (ctx.online) return player === ctx.myPlayer ? 'You' : 'Opponent';
-      if (ctx.vsCpu) return player === ctx.cpuPlayer ? 'Computer' : 'You';
+      if (ctx.vsCpu) {
+        if (player !== ctx.cpuPlayer) return 'You';
+        const lvl = Game.DIFFICULTY[ctx.cpuLevel] || Game.DIFFICULTY.legendary;
+        return long ? `Computer (${lvl.name})` : 'Computer';
+      }
       return 'Player ' + player;
     }
 

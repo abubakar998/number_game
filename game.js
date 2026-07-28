@@ -75,5 +75,49 @@
     return 1 + Math.floor(Math.random() * state.maxAdd);
   }
 
-  return { createState, isValidMove, applyMove, bestMove, paramsValid, PARAM_LIMITS };
+  // Computer skill levels. `accuracy` is how often it finds the optimal move;
+  // `seatAccuracy` is how often it claims the winning seat in cut-and-choose.
+  // Legendary is perfect play, which in this solved game is unbeatable from a won seat.
+  const DIFFICULTY = {
+    beginner: { name: 'Beginner', accuracy: 0.35, seatAccuracy: 0.25 },
+    pro: { name: 'Pro', accuracy: 0.8, seatAccuracy: 0.85 },
+    legendary: { name: 'Legendary', accuracy: 1, seatAccuracy: 1 },
+  };
+
+  function difficultyFor(level) {
+    return DIFFICULTY[level] || DIFFICULTY.legendary;
+  }
+
+  // A random legal move other than `avoid` — a deliberate blunder.
+  function randomOtherMove(state, avoid) {
+    const options = [];
+    for (let i = 1; i <= state.maxAdd; i++) if (i !== avoid) options.push(i);
+    if (options.length === 0) return avoid; // shouldn't happen (maxAdd >= 2)
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // The move the computer actually plays at the given skill level.
+  function cpuMove(state, level) {
+    const remaining = state.target - state.total;
+    // Every level takes a win it can see this turn — missing that looks broken, not easy.
+    if (remaining <= state.maxAdd) return remaining;
+    const best = bestMove(state);
+    if (Math.random() < difficultyFor(level).accuracy) return best;
+    return randomOtherMove(state, best);
+  }
+
+  // Cut-and-choose seat pick for the computer. The first mover wins with perfect play
+  // unless target is a multiple of (maxAdd + 1). Weaker levels often pick the losing seat.
+  // Returns the player number to move first (1 = human, 2 = computer).
+  function chooseSeatFor(target, maxAdd, level) {
+    const firstMoverWins = target % (maxAdd + 1) !== 0;
+    const wantsWinningSeat = Math.random() < difficultyFor(level).seatAccuracy;
+    const computerFirst = wantsWinningSeat ? firstMoverWins : !firstMoverWins;
+    return computerFirst ? 2 : 1;
+  }
+
+  return {
+    createState, isValidMove, applyMove, bestMove, paramsValid, PARAM_LIMITS,
+    DIFFICULTY, cpuMove, chooseSeatFor,
+  };
 });

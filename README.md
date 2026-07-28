@@ -1,4 +1,4 @@
-# ± Plusminus
+<img src="public/logo.svg" alt="Plusminus" width="379" height="96" />
 
 *One game, two directions.*
 

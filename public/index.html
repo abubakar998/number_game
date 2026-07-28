@@ -100,6 +100,11 @@
     }
     .banner.lose { background: rgba(248,113,113,0.15); color: var(--danger); }
     .status { text-align: center; color: var(--muted); font-size: 0.9rem; min-height: 1.2em; margin-bottom: 12px; }
+    .clock {
+      text-align: center; font-size: 0.95rem; font-weight: 700; color: var(--muted);
+      min-height: 1.3em; margin: -10px 0 14px;
+    }
+    .clock.urgent { color: var(--danger); }
     .scores {
       display: flex; justify-content: center; align-items: center; gap: 14px;
       font-weight: 700; margin-bottom: 12px;
@@ -151,6 +156,17 @@
         </div>
         <div class="hint">Target ÷ (Max add + 1) must be between 8 and 15.</div>
         <div id="warn" class="warn"></div>
+      </div>
+
+      <!-- turn clock: applies to every mode. Online rooms use the host's choice. -->
+      <div id="timerField">
+        <label for="turnSeconds">Turn timer</label>
+        <select id="turnSeconds">
+          <option value="0">Off</option>
+          <option value="30" selected>30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+        </select>
       </div>
 
       <!-- vs computer: who sets the numbers (the other side then chooses first/second) -->
@@ -212,6 +228,7 @@
           <div class="target" id="targetDisplay"></div>
         </div>
         <div class="turn" id="turnDisplay"></div>
+        <div class="clock" id="clockDisplay"></div>
 
         <!-- online: single shared row of buttons -->
         <div class="adds" id="addButtons"></div>
@@ -295,6 +312,53 @@
     }
 
     function cpuLevel() { return $('difficulty').value; }
+    function chosenTurnSeconds() { return parseInt($('turnSeconds').value, 10) || 0; }
+
+    // ===== Turn clock =====
+    // One countdown drives every mode. In local games this also *enforces* the limit;
+    // online it only displays, because the server owns that clock.
+    let clockIntervalId = null;
+    let clockDeadline = null;
+
+    function startTurnCountdown(ms) {
+      stopTurnCountdown();
+      clockDeadline = Date.now() + ms;
+      renderClock();
+      clockIntervalId = setInterval(renderClock, 250); // sub-second tick keeps the display honest
+    }
+
+    function stopTurnCountdown() {
+      if (clockIntervalId) { clearInterval(clockIntervalId); clockIntervalId = null; }
+      clockDeadline = null;
+      const el = $('clockDisplay');
+      el.textContent = '';
+      el.classList.remove('urgent');
+    }
+
+    function renderClock() {
+      if (clockDeadline === null) return;
+      const left = Math.max(0, clockDeadline - Date.now());
+      const el = $('clockDisplay');
+      el.textContent = `⏱ ${Math.ceil(left / 1000)}s`;
+      el.classList.toggle('urgent', left <= 10000);
+      if (left > 0) return;
+      stopTurnCountdown();
+      if (!ctx || ctx.online) return; // online: the server's auto-move arrives as a state update
+      if (!ctx.state || ctx.state.winner !== null) return;
+      localMove(Game.randomMove(ctx.state), true);
+    }
+
+    // Local modes: keep the clock in step with whose turn it is. Restarts only when the
+    // turn actually changes, so repeated render() calls don't hand out extra time.
+    function syncLocalTimer() {
+      const s = ctx.state;
+      const humanTurn = s.winner === null && canMoveNow();
+      if (!ctx.turnSeconds || !humanTurn) { stopTurnCountdown(); return; }
+      const key = s.currentPlayer + ':' + s.total;
+      if (ctx.turnKey === key) return; // same turn, let it keep running
+      ctx.turnKey = key;
+      startTurnCountdown(ctx.turnSeconds * 1000);
+    }
 
     function validateParams() {
       const L = Game.PARAM_LIMITS;
@@ -317,10 +381,11 @@
 
     $('startBtn').addEventListener('click', () => {
       if (mode === 'online') return startOnline();
+      const turnSeconds = chosenTurnSeconds();
       if (mode === 'hotseat') {
         const params = validateParams();
         if (!params) return;
-        return startLocal(params, { vsCpu: false, firstMover: 1 });
+        return startLocal(params, { vsCpu: false, firstMover: 1, turnSeconds });
       }
       // vs Computer, cut-and-choose:
       const level = cpuLevel();
@@ -331,8 +396,8 @@
         $('roomInfo').classList.add('hidden');
         showChoosePanel(
           `Computer set Target ${params.target} · Max add ${params.maxAdd}. Move first or second?`,
-          () => startLocal(params, { vsCpu: true, firstMover: 1, cpuLevel: level }), // you first
-          () => startLocal(params, { vsCpu: true, firstMover: 2, cpuLevel: level })  // computer first
+          () => startLocal(params, { vsCpu: true, firstMover: 1, cpuLevel: level, turnSeconds }), // you first
+          () => startLocal(params, { vsCpu: true, firstMover: 2, cpuLevel: level, turnSeconds })  // computer first
         );
       } else {
         // You set the numbers; the computer picks its seat (well, at higher levels).
@@ -342,6 +407,7 @@
           vsCpu: true,
           firstMover: Game.chooseSeatFor(params.target, params.maxAdd, level),
           cpuLevel: level,
+          turnSeconds,
         });
       }
     });
@@ -378,12 +444,13 @@
     $('againBtn').addEventListener('click', () => {
       if (!ctx) return;
       if (ctx.online) { ctx.ws.send(JSON.stringify({ type: 'rematch' })); }
-      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores, cpuLevel: ctx.cpuLevel });
+      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores, cpuLevel: ctx.cpuLevel, turnSeconds: ctx.turnSeconds });
     });
 
     function showGame() { setupEl.classList.add('hidden'); gameEl.classList.remove('hidden'); }
     function backToMenu() {
       if (ctx && ctx.online) { ctx.left = true; if (ctx.ws) { try { ctx.ws.close(); } catch (e) {} } }
+      stopTurnCountdown();
       ctx = null;
       gameEl.classList.add('hidden');
       setupEl.classList.remove('hidden');
@@ -418,7 +485,10 @@
         scores: opts.scores || { 1: 0, 2: 0 },
         cpuPlayer: vsCpu ? 2 : null, // You are player 1, the computer is player 2
         cpuLevel: opts.cpuLevel || 'legendary',
+        turnSeconds: opts.turnSeconds || 0,
+        turnKey: null,
       };
+      stopTurnCountdown();
       $('roomInfo').classList.add('hidden');
       $('log').innerHTML = '';
       showGame();
@@ -426,12 +496,12 @@
       maybeCpuMove();
     }
 
-    function localMove(n) {
+    function localMove(n, timedOut) {
       if (!Game.isValidMove(ctx.state, n)) return;
       const player = ctx.state.currentPlayer;
       Game.applyMove(ctx.state, n);
       if (ctx.state.winner !== null) ctx.scores[ctx.state.winner]++;
-      logMove(playerLabel(player), n, ctx.state.total);
+      logMove(playerLabel(player), n, ctx.state.total, timedOut);
       render();
       maybeCpuMove();
     }
@@ -454,6 +524,7 @@
       if (onlineAction === 'create') {
         params = validateParams();
         if (!params) return;
+        params.turnSeconds = chosenTurnSeconds(); // host sets the room's clock
       } else {
         const code = ($('roomCode').value || '').trim().toUpperCase();
         if (!code) { $('warn').textContent = 'Enter a room code to join.'; return; }
@@ -484,7 +555,7 @@
         if (ctx.token) {
           ws.send(JSON.stringify({ type: 'reconnect', code: ctx.roomCode, token: ctx.token }));
         } else if (ctx.action === 'create') {
-          ws.send(JSON.stringify({ type: 'create', target: ctx.params.target, maxAdd: ctx.params.maxAdd }));
+          ws.send(JSON.stringify({ type: 'create', target: ctx.params.target, maxAdd: ctx.params.maxAdd, turnSeconds: ctx.params.turnSeconds }));
         } else {
           ws.send(JSON.stringify({ type: 'join', code: ctx.params.code }));
         }
@@ -542,8 +613,11 @@
           setStatus('');
           ctx.state = msg.state;
           if (msg.scores) ctx.scores = msg.scores;
-          if (msg.move) logMove(playerLabel(msg.move.player), msg.move.n, msg.state.total);
+          if (msg.move) logMove(playerLabel(msg.move.player), msg.move.n, msg.state.total, msg.move.timedOut);
           render();
+          // The server owns the online clock; a resync sends the time actually left.
+          if (msg.turnMsLeft != null) startTurnCountdown(msg.turnMsLeft);
+          else stopTurnCountdown();
           break;
         case 'opponent_disconnected':
           setStatus('Opponent disconnected — waiting for them to reconnect…');
@@ -556,6 +630,7 @@
         case 'opponent_left':
           setStatus('Opponent left the game.');
           disableAdds();
+          stopTurnCountdown(); // room is gone; no more state updates are coming
           break;
         case 'error':
           setStatus('⚠ ' + msg.message);
@@ -582,6 +657,7 @@
         showWinner(s.winner);
         $('turnDisplay').textContent = '';
         $('againBtn').classList.remove('hidden');
+        stopTurnCountdown();
       } else {
         $('banner').classList.add('hidden');
         $('againBtn').classList.add('hidden');
@@ -589,6 +665,7 @@
       }
 
       renderControls(s);
+      if (!ctx.online) syncLocalTimer(); // online clocks come from the server
     }
 
     // Online uses one shared button row; local modes use a column per player.
@@ -701,9 +778,9 @@
       setStatus('');
     }
 
-    function logMove(who, n, total) {
+    function logMove(who, n, total, timedOut) {
       const div = document.createElement('div');
-      div.textContent = `${who} added ${n} → total ${total}`;
+      div.textContent = `${who} added ${n} → total ${total}` + (timedOut ? '  ⏱ timed out' : '');
       $('log').appendChild(div);
       $('log').scrollTop = $('log').scrollHeight;
     }

@@ -66,9 +66,47 @@ function send(ws, obj) {
 }
 
 function broadcastState(room, move) {
-  const payload = { type: 'state', state: room.state, scores: room.scores };
+  const payload = {
+    type: 'state', state: room.state, scores: room.scores,
+    turnSeconds: room.turnSeconds, turnMsLeft: turnMsLeft(room),
+  };
   if (move) payload.move = move;
   room.players.forEach((ws) => send(ws, payload));
+}
+
+// ---- Turn clock (server-authoritative) ----
+// The clock is restarted only where a new turn actually begins, never on reconnect —
+// otherwise a player could refresh the page to buy themselves a fresh turn.
+function clearTurnTimer(room) {
+  if (room.turnTimer) { clearTimeout(room.turnTimer); room.turnTimer = null; }
+  room.turnDeadline = null;
+}
+
+function startTurnTimer(room) {
+  clearTurnTimer(room);
+  if (!room.turnSeconds) return;                    // timer switched off for this room
+  if (!room.state || room.state.winner !== null) return;
+  const ms = room.turnSeconds * 1000;
+  room.turnDeadline = Date.now() + ms;
+  room.turnTimer = setTimeout(() => onTurnTimeout(room), ms);
+}
+
+function turnMsLeft(room) {
+  if (!room.turnDeadline || !room.state || room.state.winner !== null) return null;
+  return Math.max(0, room.turnDeadline - Date.now());
+}
+
+// Turn ran out: add a random legal amount for whoever was to move. This also covers a
+// player who walked away or dropped mid-turn — the game shouldn't stall waiting on them.
+function onTurnTimeout(room) {
+  room.turnTimer = null;
+  if (!room.state || room.state.winner !== null) return;
+  const mover = room.state.currentPlayer;
+  const n = Game.randomMove(room.state);
+  Game.applyMove(room.state, n);
+  if (room.state.winner !== null) room.scores[room.state.winner]++;
+  startTurnTimer(room);
+  broadcastState(room, { player: mover, n, timedOut: true });
 }
 
 wss.on('connection', (ws) => {
@@ -85,12 +123,17 @@ wss.on('connection', (ws) => {
       if (!Game.paramsValid(target, maxAdd)) { send(ws, { type: 'error', message: 'Invalid parameters.' }); return; }
       const code = makeCode();
       const token = makeToken();
+      // The host picks the turn clock for the room; the joiner inherits it.
+      const turnSeconds = Game.turnSecondsValid(parseInt(msg.turnSeconds, 10))
+        ? parseInt(msg.turnSeconds, 10)
+        : Game.TURN_SECONDS_DEFAULT;
       const room = {
         code, players: [ws, null], tokens: [token, null],
         // Cut-and-choose: the host (player 1) sets the numbers; the joiner (player 2)
         // then chooses who moves first. `state` stays null until that choice.
         target, maxAdd, firstMover: null, state: null,
         scores: { 1: 0, 2: 0 }, graceTimer: null,
+        turnSeconds, turnTimer: null, turnDeadline: null,
       };
       rooms.set(code, room);
       ws.roomCode = code;
@@ -112,7 +155,7 @@ wss.on('connection', (ws) => {
       ws.token = token;
       send(ws, { type: 'joined', player: 2, token });
       // Joiner picks first/second before the game starts.
-      send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd });
+      send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds });
       send(room.players[0], { type: 'opponent_choosing' });
       return;
     }
@@ -124,6 +167,7 @@ wss.on('connection', (ws) => {
       // Joiner (player 2) picks whether they move first.
       room.firstMover = msg.mefirst ? 2 : 1;
       room.state = Game.createState(room.target, room.maxAdd, room.firstMover);
+      startTurnTimer(room);
       broadcastState(room);
       return;
     }
@@ -144,7 +188,7 @@ wss.on('connection', (ws) => {
       if (room.state) {
         broadcastState(room); // game in progress: resync the returning player's board
       } else if (ws.playerNum === 2) {
-        send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd }); // hadn't chosen yet
+        send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds }); // hadn't chosen yet
       } else {
         send(ws, { type: 'opponent_choosing' }); // host waiting on joiner's choice
       }
@@ -161,6 +205,7 @@ wss.on('connection', (ws) => {
       const mover = room.state.currentPlayer;
       Game.applyMove(room.state, n);
       if (room.state.winner !== null) room.scores[room.state.winner]++;
+      startTurnTimer(room);
       broadcastState(room, { player: mover, n });
       return;
     }
@@ -169,6 +214,7 @@ wss.on('connection', (ws) => {
       const room = rooms.get(ws.roomCode);
       if (!room || room.firstMover === null) return;
       room.state = Game.createState(room.target, room.maxAdd, room.firstMover);
+      startTurnTimer(room);
       broadcastState(room);
       return;
     }
@@ -182,7 +228,7 @@ wss.on('connection', (ws) => {
     room.players[idx] = null;
 
     const other = room.players[idx === 0 ? 1 : 0];
-    if (!other) { rooms.delete(room.code); return; } // both gone
+    if (!other) { clearTurnTimer(room); rooms.delete(room.code); return; } // both gone
 
     // Keep the room alive briefly so the player can reconnect with their token.
     send(other, { type: 'opponent_disconnected' });
@@ -191,6 +237,7 @@ wss.on('connection', (ws) => {
       if (!cur) return;
       const remaining = cur.players[idx === 0 ? 1 : 0];
       send(remaining, { type: 'opponent_left' });
+      clearTurnTimer(cur);
       rooms.delete(room.code);
     }, RECONNECT_GRACE_MS);
   });

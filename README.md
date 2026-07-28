@@ -8,6 +8,12 @@ the Target** wins.
 **Target ÷ (Max add + 1) between 8 and 15** (this keeps a game to a sensible length).
 For example, with Max add = 2 the ratio rule puts the target between 24 and 45.
 
+**Turn timer:** each turn is limited to **1 minute** by default — pick **Off**, **30
+seconds**, **1 minute**, or **2 minutes** in setup. When a turn runs out, a random legal
+amount is added for that player and play moves on, so a game can never stall. In Online
+mode the **host's** choice applies to the whole room, and the countdown is run by the
+server (not the browser), so both players always see the same clock.
+
 Three ways to play:
 
 - **Two players** – hotseat on one PC.

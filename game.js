@@ -63,6 +63,20 @@
     return state;
   }
 
+  // Turn clock options, in seconds (0 = no timer). When a turn runs out, a random
+  // legal amount is added for that player so the game can't stall.
+  const TURN_SECONDS_CHOICES = [0, 30, 60, 120];
+  const TURN_SECONDS_DEFAULT = 30;
+
+  function turnSecondsValid(s) {
+    return TURN_SECONDS_CHOICES.indexOf(s) !== -1;
+  }
+
+  // Any legal amount, chosen uniformly. Used for timed-out turns.
+  function randomMove(state) {
+    return 1 + Math.floor(Math.random() * state.maxAdd);
+  }
+
   // Optimal move for the current player (used by the AI and as a hint).
   // Leaves the opponent on a multiple of (maxAdd + 1) whenever possible.
   function bestMove(state) {
@@ -70,9 +84,9 @@
     if (remaining <= state.maxAdd) return remaining; // win immediately
     const n = remaining % (state.maxAdd + 1);
     if (n !== 0) return n; // winning move: leave opponent on a multiple of (maxAdd+1)
-    // Losing position: no move helps, so play a random legal amount (1..maxAdd)
-    // instead of always the same value, to stay unpredictable.
-    return 1 + Math.floor(Math.random() * state.maxAdd);
+    // Losing position: no move helps, so play a random legal amount instead of
+    // always the same value, to stay unpredictable.
+    return randomMove(state);
   }
 
   // Computer skill levels. `accuracy` is how often it finds the optimal move;
@@ -119,5 +133,6 @@
   return {
     createState, isValidMove, applyMove, bestMove, paramsValid, PARAM_LIMITS,
     DIFFICULTY, cpuMove, chooseSeatFor,
+    TURN_SECONDS_CHOICES, TURN_SECONDS_DEFAULT, turnSecondsValid, randomMove,
   };
 });

@@ -131,11 +131,17 @@
 </head>
 <body>
   <div class="app">
-    <h1>➕ Adding Number Game</h1>
-    <p class="tagline">Add up to <em>Max add</em> each turn. First to reach the <em>Target</em> wins.</p>
+    <h1 id="gameTitle">➕ Adding Number Game</h1>
+    <p class="tagline" id="gameTagline">Add up to <em>Max add</em> each turn. First to reach the <em>Target</em> wins.</p>
 
     <!-- SETUP -->
     <div id="setup" class="panel">
+      <!-- which game: addition (reach the target) or subtraction (avoid zero) -->
+      <div class="mode-tabs" id="variantTabs">
+        <button data-variant="add" class="active">Addition</button>
+        <button data-variant="sub">Subtraction</button>
+      </div>
+
       <div class="mode-tabs">
         <button data-mode="hotseat" class="active">Two players</button>
         <button data-mode="cpu">vs Computer</button>
@@ -150,7 +156,7 @@
             <input type="number" id="target" value="60" min="24" max="150" />
           </div>
           <div>
-            <label for="maxAdd">Max add (2–15)</label>
+            <label for="maxAdd" id="maxAddLabel">Max add (2–15)</label>
             <input type="number" id="maxAdd" value="4" min="2" max="15" />
           </div>
         </div>
@@ -250,6 +256,7 @@
 
       <div class="row">
         <div><button id="againBtn" class="secondary block hidden">Play again</button></div>
+        <div><button id="resignBtn" class="secondary block hidden">Surrender</button></div>
         <div><button id="menuBtn" class="secondary block">Menu</button></div>
       </div>
     </div>
@@ -263,14 +270,35 @@
     const setupEl = $('setup');
     const gameEl = $('game');
     const modeTabs = document.querySelectorAll('.mode-tabs [data-mode]');
+    const variantTabs = document.querySelectorAll('#variantTabs [data-variant]');
 
     let mode = 'hotseat';        // 'hotseat' | 'cpu' | 'online'
     let onlineAction = 'create'; // 'create' | 'join'
+    let variant = 'add';         // 'add' | 'sub'
 
     // ---- runtime game context ----
     let ctx = null; // holds state + mode-specific fields
 
     // ===== Setup interactions =====
+    variantTabs.forEach((btn) => btn.addEventListener('click', () => setVariant(btn.dataset.variant)));
+
+    // Also used to adopt the host's variant when joining an online room.
+    function setVariant(v) {
+      if (!Game.variantValid(v)) return;
+      variant = v;
+      variantTabs.forEach((b) => b.classList.toggle('active', b.dataset.variant === v));
+      updateVariantLabels();
+    }
+
+    // All variant-specific wording comes from Game.VARIANTS so it stays in one place.
+    function updateVariantLabels() {
+      const v = Game.VARIANTS[variant];
+      const L = Game.PARAM_LIMITS;
+      $('gameTitle').textContent = (variant === 'sub' ? '➖ ' : '➕ ') + v.name + ' Number Game';
+      $('gameTagline').textContent = v.tagline;
+      $('maxAddLabel').textContent = `${v.stepLabel} (${L.maxAddMin}–${L.maxAddMax})`;
+    }
+
     modeTabs.forEach((btn) => btn.addEventListener('click', () => {
       mode = btn.dataset.mode;
       modeTabs.forEach((b) => b.classList.toggle('active', b === btn));
@@ -312,6 +340,12 @@
     }
 
     function cpuLevel() { return $('difficulty').value; }
+
+    // "Target 60 · Max add 4", worded for the variant.
+    function paramsText(params, v) {
+      const meta = Game.VARIANTS[v || variant];
+      return `Target ${params.target} · ${meta.stepLabel} ${params.maxAdd}`;
+    }
     function chosenTurnSeconds() { return parseInt($('turnSeconds').value, 10) || 0; }
 
     // ===== Turn clock =====
@@ -385,7 +419,7 @@
       if (mode === 'hotseat') {
         const params = validateParams();
         if (!params) return;
-        return startLocal(params, { vsCpu: false, firstMover: 1, turnSeconds });
+        return startLocal(params, { vsCpu: false, firstMover: 1, turnSeconds, variant });
       }
       // vs Computer, cut-and-choose:
       const level = cpuLevel();
@@ -395,9 +429,9 @@
         showGame();
         $('roomInfo').classList.add('hidden');
         showChoosePanel(
-          `Computer set Target ${params.target} · Max add ${params.maxAdd}. Move first or second?`,
-          () => startLocal(params, { vsCpu: true, firstMover: 1, cpuLevel: level, turnSeconds }), // you first
-          () => startLocal(params, { vsCpu: true, firstMover: 2, cpuLevel: level, turnSeconds })  // computer first
+          `Computer set ${paramsText(params)}. Move first or second?`,
+          () => startLocal(params, { vsCpu: true, firstMover: 1, cpuLevel: level, turnSeconds, variant }), // you first
+          () => startLocal(params, { vsCpu: true, firstMover: 2, cpuLevel: level, turnSeconds, variant })  // computer first
         );
       } else {
         // You set the numbers; the computer picks its seat (well, at higher levels).
@@ -405,9 +439,10 @@
         if (!params) return;
         startLocal(params, {
           vsCpu: true,
-          firstMover: Game.chooseSeatFor(params.target, params.maxAdd, level),
+          firstMover: Game.chooseSeatFor(params.target, params.maxAdd, level, variant),
           cpuLevel: level,
           turnSeconds,
+          variant,
         });
       }
     });
@@ -440,11 +475,32 @@
       return Promise.resolve(ok);
     }
 
+    $('resignBtn').addEventListener('click', () => {
+      if (!ctx || !ctx.state || ctx.state.winner !== null) return;
+      showChoosePanel(
+        'Surrender this game? Your opponent takes the win.',
+        () => doResign(),
+        () => render(), // "Keep playing" — restore the board exactly as it was
+        { first: 'Surrender', second: 'Keep playing' }
+      );
+    });
+
+    function doResign() {
+      if (!ctx || !ctx.state || ctx.state.winner !== null) return;
+      if (ctx.online) { ctx.ws.send(JSON.stringify({ type: 'resign' })); return; }
+      // Local: the player to move is the one conceding.
+      const quitter = ctx.state.currentPlayer;
+      Game.resign(ctx.state, quitter);
+      ctx.scores[ctx.state.winner]++;
+      logResign(playerLabel(quitter));
+      render();
+    }
+
     $('menuBtn').addEventListener('click', backToMenu);
     $('againBtn').addEventListener('click', () => {
       if (!ctx) return;
       if (ctx.online) { ctx.ws.send(JSON.stringify({ type: 'rematch' })); }
-      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores, cpuLevel: ctx.cpuLevel, turnSeconds: ctx.turnSeconds });
+      else startLocal({ target: ctx.state.target, maxAdd: ctx.state.maxAdd }, { vsCpu: ctx.vsCpu, firstMover: ctx.firstMover, scores: ctx.scores, cpuLevel: ctx.cpuLevel, turnSeconds: ctx.turnSeconds, variant: ctx.state.variant });
     });
 
     function showGame() { setupEl.classList.add('hidden'); gameEl.classList.remove('hidden'); }
@@ -458,11 +514,16 @@
       $('roomInfo').classList.add('hidden');
       $('banner').classList.add('hidden');
       $('scores').classList.add('hidden');
+      $('resignBtn').classList.add('hidden');
     }
 
     // ===== Cut-and-choose seat picker =====
-    function showChoosePanel(infoText, onFirst, onSecond) {
+    // Generic "message + two buttons" panel. `labels` overrides the seat-picker wording,
+    // so the same panel can also confirm a surrender.
+    function showChoosePanel(infoText, onFirst, onSecond, labels) {
       $('chooseInfo').textContent = infoText;
+      $('chooseFirstBtn').textContent = (labels && labels.first) || 'Move first';
+      $('chooseSecondBtn').textContent = (labels && labels.second) || 'Move second';
       $('chooseFirstBtn').onclick = () => { hideChoosePanel(); onFirst(); };
       $('chooseSecondBtn').onclick = () => { hideChoosePanel(); onSecond(); };
       $('boardArea').classList.add('hidden');
@@ -481,7 +542,7 @@
       const firstMover = opts.firstMover === 2 ? 2 : 1;
       ctx = {
         online: false, vsCpu, firstMover,
-        state: Game.createState(params.target, params.maxAdd, firstMover),
+        state: Game.createState(params.target, params.maxAdd, firstMover, opts.variant),
         scores: opts.scores || { 1: 0, 2: 0 },
         cpuPlayer: vsCpu ? 2 : null, // You are player 1, the computer is player 2
         cpuLevel: opts.cpuLevel || 'legendary',
@@ -525,6 +586,7 @@
         params = validateParams();
         if (!params) return;
         params.turnSeconds = chosenTurnSeconds(); // host sets the room's clock
+        params.variant = variant;                 // ...and which game it is
       } else {
         const code = ($('roomCode').value || '').trim().toUpperCase();
         if (!code) { $('warn').textContent = 'Enter a room code to join.'; return; }
@@ -555,7 +617,7 @@
         if (ctx.token) {
           ws.send(JSON.stringify({ type: 'reconnect', code: ctx.roomCode, token: ctx.token }));
         } else if (ctx.action === 'create') {
-          ws.send(JSON.stringify({ type: 'create', target: ctx.params.target, maxAdd: ctx.params.maxAdd, turnSeconds: ctx.params.turnSeconds }));
+          ws.send(JSON.stringify({ type: 'create', target: ctx.params.target, maxAdd: ctx.params.maxAdd, turnSeconds: ctx.params.turnSeconds, variant: ctx.params.variant }));
         } else {
           ws.send(JSON.stringify({ type: 'join', code: ctx.params.code }));
         }
@@ -597,8 +659,9 @@
           // Host set the numbers; the joiner (this client) picks first or second.
           $('roomInfo').classList.add('hidden');
           setStatus('');
+          setVariant(msg.variant); // joiner plays the host's game
           showChoosePanel(
-            `Host set Target ${msg.target} · Max add ${msg.maxAdd}. Move first or second?`,
+            `Host set ${paramsText(msg, msg.variant)}. Move first or second?`,
             () => { ctx.ws.send(JSON.stringify({ type: 'seat', mefirst: true })); setStatus('Starting…'); },
             () => { ctx.ws.send(JSON.stringify({ type: 'seat', mefirst: false })); setStatus('Starting…'); }
           );
@@ -612,8 +675,10 @@
           $('roomInfo').classList.add('hidden');
           setStatus('');
           ctx.state = msg.state;
+          setVariant(msg.state.variant); // covers a reconnect that skipped choose_seat
           if (msg.scores) ctx.scores = msg.scores;
-          if (msg.move) logMove(playerLabel(msg.move.player), msg.move.n, msg.state.total, msg.move.timedOut);
+          if (msg.move && msg.move.resigned) logResign(playerLabel(msg.move.player));
+          else if (msg.move) logMove(playerLabel(msg.move.player), msg.move.n, msg.state.total, msg.move.timedOut);
           render();
           // The server owns the online clock; a resync sends the time actually left.
           if (msg.turnMsLeft != null) startTurnCountdown(msg.turnMsLeft);
@@ -650,18 +715,23 @@
       const s = ctx.state;
       if (!s) return;
       $('totalDisplay').textContent = s.total;
-      $('targetDisplay').textContent = `Target: ${s.target}  ·  Max add: ${s.maxAdd}`;
+      $('targetDisplay').textContent = paramsText(s, s.variant);
       renderScores();
 
       if (s.winner !== null) {
         showWinner(s.winner);
         $('turnDisplay').textContent = '';
         $('againBtn').classList.remove('hidden');
+        $('resignBtn').classList.add('hidden');
         stopTurnCountdown();
       } else {
         $('banner').classList.add('hidden');
         $('againBtn').classList.add('hidden');
         $('turnDisplay').textContent = turnText(s.currentPlayer);
+        // Online you may concede at any time; locally only the player to move can,
+        // which also keeps it disabled during the computer's turn.
+        $('resignBtn').classList.remove('hidden');
+        $('resignBtn').disabled = !ctx.online && !canMoveNow();
       }
 
       renderControls(s);
@@ -670,17 +740,21 @@
 
     // Online uses one shared button row; local modes use a column per player.
     function renderControls(s) {
+      // In subtraction you can't go below zero, so oversized buttons grey out near the end.
+      const limit = Game.maxLegal(s);
       if (ctx.online) {
         $('twoCol').classList.add('hidden');
         $('addButtons').classList.remove('hidden');
-        renderAddButtons(s.maxAdd);
+        renderAddButtons(s);
         const myTurn = canMoveNow();
-        document.querySelectorAll('#addButtons button').forEach((b) => { b.disabled = !myTurn; });
+        document.querySelectorAll('#addButtons button').forEach((b) => {
+          b.disabled = !myTurn || Number(b.dataset.n) > limit;
+        });
         return;
       }
       $('addButtons').classList.add('hidden');
       $('twoCol').classList.remove('hidden');
-      renderTwoColButtons(s.maxAdd);
+      renderTwoColButtons(s);
       $('nameP1').textContent = playerLabel(1, true);
       $('nameP2').textContent = playerLabel(2, true);
       [1, 2].forEach((p) => {
@@ -688,7 +762,9 @@
         $('colP' + p).classList.toggle('active', active);
         $('colP' + p).classList.toggle('dim', !active);
         const enabled = columnEnabled(p);
-        $('addsP' + p).querySelectorAll('button').forEach((b) => { b.disabled = !enabled; });
+        $('addsP' + p).querySelectorAll('button').forEach((b) => {
+          b.disabled = !enabled || Number(b.dataset.n) > limit;
+        });
       });
     }
 
@@ -709,30 +785,28 @@
       return true; // hotseat: always the active human
     }
 
-    function renderAddButtons(maxAdd) {
-      const box = $('addButtons');
-      if (box.childElementCount === maxAdd) return; // already built
+    // Rebuild when the count OR the variant changes — the same button count with a
+    // different sign must not be served from cache.
+    function buildStepButtons(box, s, onClick) {
+      const sign = Game.VARIANTS[s.variant].sign;
+      if (box.childElementCount === s.maxAdd && box.dataset.variant === s.variant) return;
+      box.dataset.variant = s.variant;
       box.innerHTML = '';
-      for (let i = 1; i <= maxAdd; i++) {
+      for (let i = 1; i <= s.maxAdd; i++) {
         const b = document.createElement('button');
-        b.textContent = '+' + i;
-        b.addEventListener('click', () => (ctx.online ? onlineMove(i) : localMove(i)));
+        b.textContent = sign + i;
+        b.dataset.n = i;
+        b.addEventListener('click', () => onClick(i));
         box.appendChild(b);
       }
     }
 
-    function renderTwoColButtons(maxAdd) {
-      [1, 2].forEach((p) => {
-        const box = $('addsP' + p);
-        if (box.childElementCount === maxAdd) return; // already built
-        box.innerHTML = '';
-        for (let i = 1; i <= maxAdd; i++) {
-          const b = document.createElement('button');
-          b.textContent = '+' + i;
-          b.addEventListener('click', () => localMove(i));
-          box.appendChild(b);
-        }
-      });
+    function renderAddButtons(s) {
+      buildStepButtons($('addButtons'), s, (i) => (ctx.online ? onlineMove(i) : localMove(i)));
+    }
+
+    function renderTwoColButtons(s) {
+      [1, 2].forEach((p) => buildStepButtons($('addsP' + p), s, (i) => localMove(i)));
     }
 
     function disableAdds() { document.querySelectorAll('#addButtons button').forEach((b) => (b.disabled = true)); }
@@ -772,6 +846,13 @@
       if (ctx.online) { text = player === ctx.myPlayer ? '🎉 You win!' : 'You lose.'; lost = player !== ctx.myPlayer; }
       else if (ctx.vsCpu) { text = player === ctx.cpuPlayer ? 'Computer wins.' : '🎉 You win!'; lost = player === ctx.cpuPlayer; }
       else { text = `🎉 Player ${player} wins!`; }
+      const loser = player === 1 ? 2 : 1;
+      if (ctx.state.resignedBy) {
+        text += ` — ${playerLabel(ctx.state.resignedBy)} surrendered`;
+      } else if (ctx.state.variant === 'sub') {
+        // In subtraction the winner is whoever did NOT land on zero — say so explicitly.
+        text += ` — ${playerLabel(loser)} hit zero`;
+      }
       banner.textContent = text;
       banner.classList.toggle('lose', lost);
       banner.classList.remove('hidden');
@@ -780,7 +861,17 @@
 
     function logMove(who, n, total, timedOut) {
       const div = document.createElement('div');
-      div.textContent = `${who} added ${n} → total ${total}` + (timedOut ? '  ⏱ timed out' : '');
+      const v = Game.VARIANTS[ctx.state.variant];
+      let text = `${who} ${v.verb} ${n} → total ${total}`;
+      if (ctx.state.variant === 'sub' && total === 0) text += ' · touched zero, loses';
+      div.textContent = text + (timedOut ? '  ⏱ timed out' : '');
+      $('log').appendChild(div);
+      $('log').scrollTop = $('log').scrollHeight;
+    }
+
+    function logResign(who) {
+      const div = document.createElement('div');
+      div.textContent = `${who} surrendered`;
       $('log').appendChild(div);
       $('log').scrollTop = $('log').scrollHeight;
     }

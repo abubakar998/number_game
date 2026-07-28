@@ -127,11 +127,12 @@ wss.on('connection', (ws) => {
       const turnSeconds = Game.turnSecondsValid(parseInt(msg.turnSeconds, 10))
         ? parseInt(msg.turnSeconds, 10)
         : Game.TURN_SECONDS_DEFAULT;
+      const variant = Game.variantValid(msg.variant) ? msg.variant : 'add';
       const room = {
         code, players: [ws, null], tokens: [token, null],
         // Cut-and-choose: the host (player 1) sets the numbers; the joiner (player 2)
         // then chooses who moves first. `state` stays null until that choice.
-        target, maxAdd, firstMover: null, state: null,
+        target, maxAdd, variant, firstMover: null, state: null,
         scores: { 1: 0, 2: 0 }, graceTimer: null,
         turnSeconds, turnTimer: null, turnDeadline: null,
       };
@@ -155,7 +156,7 @@ wss.on('connection', (ws) => {
       ws.token = token;
       send(ws, { type: 'joined', player: 2, token });
       // Joiner picks first/second before the game starts.
-      send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds });
+      send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds, variant: room.variant });
       send(room.players[0], { type: 'opponent_choosing' });
       return;
     }
@@ -166,7 +167,7 @@ wss.on('connection', (ws) => {
       if (room.state) return; // already chosen/started
       // Joiner (player 2) picks whether they move first.
       room.firstMover = msg.mefirst ? 2 : 1;
-      room.state = Game.createState(room.target, room.maxAdd, room.firstMover);
+      room.state = Game.createState(room.target, room.maxAdd, room.firstMover, room.variant);
       startTurnTimer(room);
       broadcastState(room);
       return;
@@ -188,7 +189,7 @@ wss.on('connection', (ws) => {
       if (room.state) {
         broadcastState(room); // game in progress: resync the returning player's board
       } else if (ws.playerNum === 2) {
-        send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds }); // hadn't chosen yet
+        send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds, variant: room.variant }); // hadn't chosen yet
       } else {
         send(ws, { type: 'opponent_choosing' }); // host waiting on joiner's choice
       }
@@ -210,10 +211,24 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    // Conceding is allowed at any time, not just on your turn — each socket is
+    // unambiguously one player, so there's no doubt about who gave up.
+    if (msg.type === 'resign') {
+      const room = rooms.get(ws.roomCode);
+      if (!room || !room.state) return;            // game hasn't started yet
+      if (room.state.winner !== null) return;      // already decided
+      if (ws.playerNum !== 1 && ws.playerNum !== 2) return;
+      Game.resign(room.state, ws.playerNum);
+      room.scores[room.state.winner]++;
+      startTurnTimer(room); // clears the clock, since the game now has a winner
+      broadcastState(room, { player: ws.playerNum, resigned: true });
+      return;
+    }
+
     if (msg.type === 'rematch') {
       const room = rooms.get(ws.roomCode);
       if (!room || room.firstMover === null) return;
-      room.state = Game.createState(room.target, room.maxAdd, room.firstMover);
+      room.state = Game.createState(room.target, room.maxAdd, room.firstMover, room.variant);
       startTurnTimer(room);
       broadcastState(room);
       return;

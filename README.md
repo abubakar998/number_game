@@ -1,8 +1,23 @@
-# ➕ Adding Number Game
+# ➕➖ Number Game
 
-Two players take turns adding a number to a running total. Each turn you may add any
-integer from **1** up to **Max add**. The first player whose total **reaches or exceeds
-the Target** wins.
+Two players take turns changing a running total. Pick one of two games in setup:
+
+- **Addition** — the total starts at **0**. Each turn add any integer from **1** up to
+  **Max add**. The first player whose total **reaches or exceeds the Target** wins.
+- **Subtraction** — the total starts at **the Target** and counts down. Each turn
+  subtract from **1** up to **Max subtract**. Whoever **lands exactly on zero loses**.
+  You can never go below zero, so with 3 left you may only subtract 1, 2, or 3 — the
+  choices narrow until someone is squeezed onto zero.
+
+Everything else — the modes, difficulty levels, turn timer, and online rooms — works the
+same in both games.
+
+**Surrender:** since both games are solved, you often know you're beaten well before the
+total runs out. The **Surrender** button concedes the current game — your opponent takes
+the win, and it counts as a normal loss in the running score. It asks for confirmation
+first. Online you may concede at any moment; in **Two players** it applies to whoever's
+turn it is, and in **vs Computer** it's available on your turn (the computer never
+resigns — it always plays the game out).
 
 **Allowed settings:** Target **24–150**, Max add **2–15**, and
 **Target ÷ (Max add + 1) between 8 and 15** (this keeps a game to a sensible length).
@@ -22,9 +37,17 @@ Three ways to play:
 - **Online** – two humans on **different PCs**, over your network or the internet.
 
 ## Fair setup: cut-and-choose
-This is a *solved* game: with perfect play the winner is decided by one fact — **the
-player to move loses whenever `Target` is a multiple of `(Max add + 1)`**. So whoever
-picks both numbers could always rig a win. To prevent that, the two roles are split:
+Both games are *solved*: with perfect play the winner is decided the moment the numbers
+are chosen. Writing `k = Max add + 1` (or `Max subtract + 1`), the player to move loses when
+
+| Game | The player to move loses when |
+| --- | --- |
+| Addition | the amount remaining is a multiple of `k` — so the **first mover loses if `Target % k == 0`** |
+| Subtraction | the total is `1` more than a multiple of `k` — so the **first mover loses if `Target % k == 1`** |
+
+(In subtraction, a total of exactly `1` is hopeless: you must take it and hit zero.)
+
+So whoever picks both numbers could always rig a win. To prevent that, the two roles are split:
 
 > **One side sets the numbers; the *other* side then chooses to move first or second.**
 
@@ -77,9 +100,10 @@ option is **Render** (a `render.yaml` Blueprint is included); **Fly.io** works t
 [DEPLOY.md](DEPLOY.md) for step-by-step instructions.
 
 ## How the computer plays
-The winning strategy for this subtraction game is to leave you on a multiple of
-`Max add + 1`. Difficulty controls how reliably the computer finds that move, and how
-often it claims the winning seat in cut-and-choose:
+The winning strategy is to hand you a losing position from the table above — in Addition,
+leave the remaining amount a multiple of `k`; in Subtraction, leave the total at `1` more
+than a multiple of `k`. Difficulty controls how reliably the computer finds that move, and
+how often it claims the winning seat in cut-and-choose:
 
 | Level | Finds the best move | Takes the winning seat |
 | --- | --- | --- |
@@ -87,7 +111,8 @@ often it claims the winning seat in cut-and-choose:
 | Pro | 80% | 85% |
 | Legendary | always | always |
 
-Every level still takes an immediate win when the target is within reach this turn. At
+Every level still takes an immediate win when it sees one — reaching the target in
+Addition, or leaving you on `1` in Subtraction. At
 Legendary the play is perfect, so from a won seat it cannot be beaten — your chance comes
 from the seat choice.
 

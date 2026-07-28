@@ -1,7 +1,7 @@
 {
-  "name": "adding-number-game",
+  "name": "plusminus",
   "version": "1.0.0",
-  "description": "Two-player adding number game with hotseat, vs-computer, and online cross-PC modes.",
+  "description": "Plusminus — a two-player number game in two directions: add up to the target and win, or subtract down and whoever hits zero loses. Hotseat, vs-computer, and online cross-PC modes.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

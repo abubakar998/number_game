@@ -1,4 +1,4 @@
-// Shared pure game logic for the Number Game.
+// Shared pure game logic for Plusminus.
 // Loads in both the browser (attaches to window.Game) and Node (module.exports).
 //
 // Two variants, both solved games on the same underlying maths:

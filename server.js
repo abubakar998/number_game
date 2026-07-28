@@ -1,4 +1,4 @@
-// Adding Number Game — HTTP static server + authoritative WebSocket game rooms.
+// Plusminus — HTTP static server + authoritative WebSocket game rooms.
 // Run: npm install && npm start   (listens on PORT or 3000)
 
 const http = require('http');
@@ -15,6 +15,8 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.ico': 'image/x-icon',
+  '.png': 'image/png', // og.png — social scrapers reject a wrong content type
+  '.svg': 'image/svg+xml',
 };
 
 // ---- Static file server ----
@@ -155,6 +157,14 @@ wss.on('connection', (ws) => {
       ws.playerNum = 2;
       ws.token = token;
       send(ws, { type: 'joined', player: 2, token });
+      if (room.state) {
+        // Game already under way — the original player 2 dropped and someone opened the
+        // invite link again. Drop them onto the live board rather than a seat picker,
+        // which `seat` would ignore anyway now that the game has started.
+        send(room.players[0], { type: 'opponent_reconnected' });
+        broadcastState(room); // resync only: does not restart the turn clock
+        return;
+      }
       // Joiner picks first/second before the game starts.
       send(ws, { type: 'choose_seat', target: room.target, maxAdd: room.maxAdd, turnSeconds: room.turnSeconds, variant: room.variant });
       send(room.players[0], { type: 'opponent_choosing' });
@@ -258,7 +268,26 @@ wss.on('connection', (ws) => {
   });
 });
 
+// ---- Optional keep-alive ----
+// Render's free tier sleeps after ~15 min idle, so the first visitor after a quiet spell
+// waits ~30s. Setting KEEPALIVE_URL to the public URL makes the instance ping itself to
+// stay awake. Off by default: it burns free-tier hours that the host would rather reclaim,
+// so the clean fix for a busy site is a paid instance. Handy around a launch push.
+function startKeepAlive() {
+  const url = process.env.KEEPALIVE_URL;
+  if (!url) return;
+  const minutes = Number(process.env.KEEPALIVE_MINUTES) || 10;
+  const client = url.startsWith('https:') ? require('https') : require('http');
+  setInterval(() => {
+    client.get(url, (res) => { res.resume(); }).on('error', (e) => {
+      console.log('keep-alive ping failed:', e.message);
+    });
+  }, minutes * 60 * 1000).unref(); // never hold the process open on its own
+  console.log(`Keep-alive: pinging ${url} every ${minutes} min`);
+}
+
 server.listen(PORT, () => {
-  console.log(`Adding Number Game running at http://localhost:${PORT}`);
+  console.log(`Plusminus running at http://localhost:${PORT}`);
   console.log('For cross-PC play across the internet: npx ngrok http ' + PORT);
+  startKeepAlive();
 });

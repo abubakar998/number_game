@@ -1,4 +1,6 @@
-# ➕➖ Number Game
+# ± Plusminus
+
+*One game, two directions.*
 
 Two players take turns changing a running total. Pick one of two games in setup:
 

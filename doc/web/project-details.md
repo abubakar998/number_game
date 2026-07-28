@@ -1,7 +1,10 @@
-# Number Game — Project Details
+# ± Plusminus — Project Details
 
-A two-player number game with **two variants** — count up to a target, or count down to
+A two-player number game in **two directions** — count up to a target, or count down to
 zero. Playable hotseat, against a computer at three skill levels, or online across two PCs.
+
+The name comes from the two variants being the same game read forwards and backwards; the
+± glyph doubles as the logo and favicon.
 
 Live at <https://number-game-2l4k.onrender.com/>.
 
@@ -108,12 +111,25 @@ Rigging the numbers no longer helps — the chooser simply takes the winning sea
 ## 3. Architecture
 
 ```
-game.js            Shared pure logic + rules + AI (runs in browser AND Node)
-server.js          HTTP static server + authoritative WebSocket game rooms
-public/index.html  Single-file client UI (all modes, inline CSS + JS)
-package.json       start script + the single dependency (ws)
-render.yaml        Render Blueprint for the free-tier deployment
+game.js               Shared pure logic + rules + AI (runs in browser AND Node)
+server.js             HTTP static server + authoritative WebSocket game rooms
+public/index.html     Single-file client UI (all modes, inline CSS + JS)
+public/og.png         Social share card (generated, committed)
+tools/make-og-image.js Regenerates og.png using only Node's built-in zlib
+package.json          start script + the single dependency (ws)
+render.yaml           Render Blueprint for the free-tier deployment
 ```
+
+### Invite links
+Creating a room shows a **Copy invite link** button producing `…/?room=CODE`. Opening that
+link switches to Online mode and joins automatically, so the recipient never types a code.
+If the game is already under way (the other player closed the tab and reopened the link),
+the server drops them onto the live board rather than a seat picker.
+
+### Environment variables
+`PORT` (default 3000). `KEEPALIVE_URL` — optional; when set, the instance pings that URL
+every `KEEPALIVE_MINUTES` (default 10) to keep a sleeping free-tier host awake. Off unless
+set.
 
 The client runs local modes (hotseat, vs Computer) entirely in the browser. Online mode
 talks to the server, which is the **single source of truth**: it validates every move,

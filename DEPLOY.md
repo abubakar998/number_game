@@ -1,4 +1,4 @@
-# Deploying the Adding Number Game (free)
+# Deploying Plusminus (free)
 
 The online mode needs a persistent Node process with WebSocket support, so it can't go on a
 static/serverless host (GitHub Pages, Netlify, Vercel static). The easiest **free** option

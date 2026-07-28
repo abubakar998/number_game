@@ -3,7 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Addition Number Game</title>
+  <title>Plusminus — Addition</title>
+
+  <!-- ± as an inline SVG favicon: one glyph for both games, no extra file to serve. -->
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%230f172a"/><text x="32" y="47" font-size="46" font-weight="700" text-anchor="middle" fill="%2338bdf8" font-family="system-ui,sans-serif">±</text></svg>' />
+
+  <!-- Social share card. Absolute URLs: scrapers don't resolve relative paths. -->
+  <meta name="description" content="Plusminus is a two-player number game that's mathematically solved. Count up to the target and win, or count down and whoever hits zero loses. Play a friend or beat the Legendary AI. Free, no signup." />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="canonical" href="https://number-game-2l4k.onrender.com/" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Plusminus" />
+  <meta property="og:url" content="https://number-game-2l4k.onrender.com/" />
+  <meta property="og:title" content="Plusminus — a game you can't win (unless you know the trick)" />
+  <meta property="og:description" content="Mathematically solved: one line of arithmetic decides the winner before anyone moves. Add to win, or subtract to survive. Beat the Legendary AI if you can." />
+  <meta property="og:image" content="https://number-game-2l4k.onrender.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Plusminus — one game, two directions: reach the target and win, or hit zero and lose." />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Plusminus — a game you can't win (unless you know the trick)" />
+  <meta name="twitter:description" content="Mathematically solved: one line of arithmetic decides the winner before anyone moves. Add to win, or subtract to survive." />
+  <meta name="twitter:image" content="https://number-game-2l4k.onrender.com/og.png" />
+
   <style>
     :root {
       --bg: #0f172a;
@@ -131,7 +155,7 @@
 </head>
 <body>
   <div class="app">
-    <h1 id="gameTitle">➕ Addition Number Game</h1>
+    <h1 id="gameTitle">➕ Plusminus</h1>
     <p class="tagline" id="gameTagline">Add up to <em>Max add</em> each turn. First to reach the <em>Target</em> wins.</p>
 
     <!-- SETUP -->
@@ -209,9 +233,12 @@
     <!-- GAME -->
     <div id="game" class="panel hidden">
       <div id="roomInfo" class="hidden">
-        <label style="text-align:center">Share this room code</label>
+        <label style="text-align:center">Send your friend this link — or read them the code</label>
         <div id="codeBox" class="code-box"></div>
-        <button id="copyCodeBtn" class="block secondary">Copy code</button>
+        <div class="row">
+          <div><button id="copyLinkBtn" class="block">Copy invite link</button></div>
+          <div><button id="copyCodeBtn" class="block secondary">Copy code</button></div>
+        </div>
       </div>
       <div id="status" class="status"></div>
 
@@ -294,11 +321,11 @@
     function updateVariantLabels() {
       const v = Game.VARIANTS[variant];
       const L = Game.PARAM_LIMITS;
-      const title = v.name + ' Number Game';
-      $('gameTitle').textContent = (variant === 'sub' ? '➖ ' : '➕ ') + title;
+      // The brand stays put; the operator flips to signal which game you're in.
+      $('gameTitle').textContent = (variant === 'sub' ? '➖ ' : '➕ ') + 'Plusminus';
       $('gameTagline').textContent = v.tagline;
       $('maxAddLabel').textContent = `${v.stepLabel} (${L.maxAddMin}–${L.maxAddMax})`;
-      document.title = title;
+      document.title = 'Plusminus — ' + v.name;
     }
 
     updateVariantLabels(); // single source of truth: overwrite the markup's placeholders
@@ -451,15 +478,23 @@
       }
     });
 
-    $('copyCodeBtn').addEventListener('click', () => {
-      const code = $('codeBox').textContent.trim();
-      if (!code) return;
-      copyText(code).then((ok) => {
-        const btn = $('copyCodeBtn');
-        btn.textContent = ok ? 'Copied!' : 'Press Ctrl+C to copy';
-        setTimeout(() => { btn.textContent = 'Copy code'; }, 1500);
+    // An invite link drops the recipient straight into the room — no code to type out.
+    function roomLink(code) {
+      return location.origin + location.pathname + '?room=' + encodeURIComponent(code);
+    }
+
+    function wireCopyButton(id, label, valueFor) {
+      $(id).addEventListener('click', () => {
+        const code = $('codeBox').textContent.trim();
+        if (!code) return;
+        copyText(valueFor(code)).then((ok) => {
+          $(id).textContent = ok ? 'Copied!' : 'Press Ctrl+C to copy';
+          setTimeout(() => { $(id).textContent = label; }, 1500);
+        });
       });
-    });
+    }
+    wireCopyButton('copyLinkBtn', 'Copy invite link', roomLink);
+    wireCopyButton('copyCodeBtn', 'Copy code', (code) => code);
 
     // navigator.clipboard needs a secure context (https/localhost); fall back to a
     // hidden textarea + execCommand for plain-http LAN play.
@@ -881,6 +916,21 @@
     }
 
     function setStatus(msg) { $('status').textContent = msg; }
+
+    // ===== Invite links (?room=CODE) =====
+    // Landing from a shared link joins the room straight away, so the recipient never
+    // has to find Online mode or type a code.
+    (function handleInviteLink() {
+      const raw = new URLSearchParams(location.search).get('room') || '';
+      const code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      if (!code) return;
+      // Reuse the mode tab's own handler so the menu reflects where we ended up.
+      const onlineTab = document.querySelector('.mode-tabs [data-mode="online"]');
+      if (onlineTab) onlineTab.click();
+      $('roomCode').value = code;
+      onlineAction = 'join';
+      startOnline();
+    })();
   </script>
 </body>
 </html>

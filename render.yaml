@@ -1,7 +1,10 @@
-# Render Blueprint — provisions the game as a free web service.
+# Render Blueprint — provisions Plusminus as a free web service.
 # Deploy: push this repo to GitHub/GitLab, then on Render choose New > Blueprint.
 services:
   - type: web
+    # Deliberately NOT renamed to "plusminus": Render keys the service off this name, so
+    # changing it provisions a NEW service on a new URL and orphans the live one at
+    # number-game-2l4k.onrender.com. Rename in the Render dashboard instead if you want to.
     name: adding-number-game
     runtime: node
     plan: free
